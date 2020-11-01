@@ -29,6 +29,7 @@ private:
   double attParaBnd_;
 
   double robSpeed_;
+  double succRad_;
 
   Eigen::Vector3d goalPos_;
 
@@ -46,7 +47,7 @@ public:
   
 
   void wait_for_params(ros::NodeHandle* nh);
-  void update_dist_map(octomap::OcTree* octTree);
+  void update_dist_map(octomap::OcTree*& octTree);
   Eigen::Vector3d neg_grad_att(Eigen::Vector3d robPos, Eigen::Vector3d goalPos, double gain, double paraBnd);
   Eigen::Vector3d neg_grad_rep(Eigen::Vector3d robPos, Eigen::Vector3d obsPos, double gain, double maxDist);
   bool nearest_obs(Eigen::Vector3d pos, Eigen::Vector3d& obsPos);
