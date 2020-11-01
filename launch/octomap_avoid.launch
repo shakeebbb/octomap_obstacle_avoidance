@@ -1,0 +1,14 @@
+<launch>
+	<node pkg="octomap_avoid" type="octomap_avoid_node" name="octomap_avoid" output="screen">
+		<param name="rep_pot_gain" type="double" value="1.2" />
+		<param name="att_pot_gain" type="double" value="1.1" />
+    <param name="rep_max_dist" type="double" value="1.5" />
+    <param name="att_para_bound" type="double" value="1.5" />
+		
+		<remap from="~/octomap_in" to="/octomap_binary" /> 
+    <remap from="~/goal_in" to="goal_in" />
+    <remap from="~/pose_in" to="pose_in" />
+    <remap from="~/twist_out" to="twist_out" />
+	
+	</node>
+</launch>
