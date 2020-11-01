@@ -7,13 +7,14 @@ octomap_avoid::octomap_avoid(ros::NodeHandle* nh)
   wait_for_params(nh);
 
   octSub_ = nh->subscribe("octomap_in", 1, &octomap_avoid::octomap_cb, this);
-  poseSub_ = nh->subscribe("pose_in", 1, &octomap_avoid::pose_cb, this);
   goalSub_ = nh->subscribe("goal_in", 1, &octomap_avoid::goal_cb, this);
 
   ROS_INFO("%s: Waiting for the first map and goal messages ...", nh->getNamespace().c_str());
   while( (isInitialized_ & 0x03) != 0x03 )
 	  ros::spinOnce();
 
+  poseSub_ = nh->subscribe("pose_in", 1, &octomap_avoid::pose_cb, this);
+  twistPub_ = nh->advertise<geometry_msgs::TwistStamped>("twist_out", 10);
 }
 
 // ***************************************************************************
@@ -28,27 +29,74 @@ void octomap_avoid::wait_for_params(ros::NodeHandle* nh)
 }
 
 // ***************************************************************************
-double neg_grad_att(Eigen::Vector3d robPos, Eigen::Vector3d goalPos, double gain, double paraBnd)
+Eigen::Vector3d octomap_avoid::neg_grad_att(Eigen::Vector3d robPos, Eigen::Vector3d goalPos, double gain, double paraBnd)
 {
+  Eigen::Vector3d attVec = goalPos - robPos;
+
+  if(attVec.squaredNorm() > (paraBnd*paraBnd)) // conical attractive field
+  {
+    attVec.normalize();
+    attVec *= (paraBnd*gain);
+  }
+  else // parabolic attractive field
+  {
+     attVec *= gain;
+  }
+
+  return attVec;
 }
 
 // ***************************************************************************
-double neg_grad_rep(Eigen::Vector3d obsPos, double gain, double maxDist)
+Eigen::Vector3d octomap_avoid::neg_grad_rep(Eigen::Vector3d robPos, Eigen::Vector3d obsPos, double gain, double maxDist)
 {
-}
+  Eigen::Vector3d repVec = obsPos - robPos;
+  double obsDist = repVec.norm();
 
-// ***************************************************************************
-void octomap_avoid::pose_cb(const geometry_msgs::Pose& poseMsg)
-{
+  double repMag = gain * (1/obsDist - 1/maxDist) * (1/obsDist) * (1/obsDist);
+
+  repVec = -1 * repMag * repVec/obsDist;
   
+  return repVec;
+}
+
+// ***************************************************************************
+void octomap_avoid::pose_cb(const geometry_msgs::PoseStamped& poseMsg)
+{
+  Eigen::Vector3d robPos;
+  robPos(0) = poseMsg.pose.position.x;
+  robPos(1) = poseMsg.pose.position.y;
+  robPos(2) = poseMsg.pose.position.z;
+
+  Eigen::Vector3d obsPos;
+  Eigen::Vector3d negGrad;
+  if (nearest_obs(robPos, obsPos))
+    negGrad = neg_grad_att(robPos, goalPos_, attGain_, attParaBnd_) +
+              neg_grad_rep(robPos, obsPos, repGain_, repMaxDist_);
+  
+  else
+    negGrad = neg_grad_att(robPos, goalPos_, attGain_, attParaBnd_);
+    
+  negGrad = negGrad.normalized() * robSpeed_;
+  
+  geometry_msgs::TwistStamped cmdTwist;
+  cmdTwist.header.stamp = ros::Time::now();
+  cmdTwist.header.frame_id = poseMsg.header.frame_id;
+  cmdTwist.twist.linear.x = negGrad(0);
+  cmdTwist.twist.linear.y = negGrad(1);
+  cmdTwist.twist.linear.z = negGrad(2);
+  cmdTwist.twist.angular.x = 0;
+  cmdTwist.twist.angular.y = 0;
+  cmdTwist.twist.angular.z = 0;
+
+  twistPub_.publish(cmdTwist);
 }
 
 // ***************************************************************************
 void octomap_avoid::goal_cb(const geometry_msgs::PointStamped& goalMsg)
 {
-  goalPt_(0) = goalMsg.point.x;
-  goalPt_(1) = goalMsg.point.y;
-  goalPt_(2) = goalMsg.point.z;
+  goalPos_(0) = goalMsg.point.x;
+  goalPos_(1) = goalMsg.point.y;
+  goalPos_(2) = goalMsg.point.z;
 
   if( (isInitialized_ & 0x02) != 0x02 )
     isInitialized_ = isInitialized_ | 0x02;
@@ -95,6 +143,22 @@ void octomap_avoid::update_dist_map(octomap::OcTree* octTree)
 
   octDist_->update(true);  //This computes the distance map
   std::cout << "Updated dist map" << std::endl;
+}
+
+// ***************************************************************************
+bool octomap_avoid::nearest_obs(Eigen::Vector3d pos, Eigen::Vector3d& obsPos)
+{
+  float distObs;
+  octomap::point3d closestObs;
+  octDist_->getDistanceAndClosestObstacle ( octomap::point3d(pos(0), pos(1), pos(2)), distObs, closestObs);
+
+  if (distObs == DynamicEDTOctomap::distanceValue_Error)
+    return false;
+  else
+  {
+    obsPos = Eigen::Vector3d(closestObs(0), closestObs(1), closestObs(2));
+    return true;
+  }
 }
 
 // ***************************************************************************
