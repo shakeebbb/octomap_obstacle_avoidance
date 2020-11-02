@@ -39,8 +39,12 @@ Eigen::Vector3d octomap_avoid::neg_grad_att(Eigen::Vector3d robPos, Eigen::Vecto
 
   double attVecNorm = attVec.norm();
 
+  std::cout << "Att Vec Norm: " << attVecNorm << std::endl;
   if(attVecNorm < succRad_)
+  {
+    std::cout << "Goal reached" << std::endl;
     return Eigen::Vector3d(0,0,0);
+  }
 
   if(attVecNorm > paraBnd) // conical attractive field
   {
@@ -61,7 +65,9 @@ Eigen::Vector3d octomap_avoid::neg_grad_rep(Eigen::Vector3d robPos, Eigen::Vecto
   Eigen::Vector3d repVec = obsPos - robPos;
   double obsDist = repVec.norm();
 
-  if(obsDist == 0)
+  std::cout << "Rep Vec Norm: " << obsDist << std::endl;
+
+  if( (obsDist == 0) || (obsDist > repMaxDist_) )
    return Eigen::Vector3d(0,0,0);
 
   double repMag = gain * (1/obsDist - 1/maxDist) * (1/obsDist) * (1/obsDist);
@@ -88,7 +94,8 @@ void octomap_avoid::pose_cb(const geometry_msgs::PoseStamped& poseMsg)
   else
     negGrad = neg_grad_att(robPos, goalPos_, attGain_, attParaBnd_);
 
-  std::cout << "Negative Gradient: " << negGrad.transpose() << std::endl;
+  std::cout << "Near Obstacle? : " << nearest_obs(robPos, obsPos) << std::endl;
+  std::cout << "Negative Gradient : " << negGrad.transpose() << std::endl;
   
   Eigen::Vector3d negGradDir = negGrad.normalized();
   Eigen::Vector3d cmdVel;
